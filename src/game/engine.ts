@@ -1,9 +1,9 @@
 // Constants
-export const GRAVITY = 1200; // px/s²
-export const JUMP_VEL = -480; // px/s
-export const TERM_VEL = 700; // px/s
-export const PIPE_SPEED = 230; // px/s
-export const PIPE_GAP = 210; // px
+export const GRAVITY = 650; // px/s² (was 1200 – reduced for mobile)
+export const JUMP_VEL = -350; // px/s (was -480 – gentler jump)
+export const TERM_VEL = 500; // px/s (was 700 – slower fall cap)
+export const PIPE_SPEED = 200; // px/s (was 230 – slightly slower scroll)
+export const PIPE_GAP = 230; // px (was 210 – wider gap for touch)
 export const PIPE_SPACING = 310; // px
 export const FIRST_PIPE_X = 500; // px
 export const BIRD_W = 72;

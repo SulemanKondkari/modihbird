@@ -6,6 +6,22 @@
   --font-press-start: "Press Start 2P", cursive;
 }
 
+/* Mobile fullscreen + prevent bounce/scroll */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100dvh;
+  width: 100vw;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  position: fixed;
+  overscroll-behavior: none;
+}
+
 @utility text-shadow {
   text-shadow: 4px 4px 0px rgba(0, 0, 0, 1);
 }

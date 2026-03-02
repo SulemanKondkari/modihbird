@@ -15,6 +15,7 @@ interface ScoreEntry {
 
 export default function Game() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<GameEngine | null>(null);
     const [gameState, setGameState] = useState<GameState>('login');
     const [score, setScore] = useState(0);
@@ -23,6 +24,12 @@ export default function Game() {
     const [playerName, setPlayerName] = useState('');
     const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>([]);
     const [submittingScore, setSubmittingScore] = useState(false);
+
+    // Canvas dimensions (dynamic)
+    const [canvasSize, setCanvasSize] = useState({ width: 400, height: 600 });
+
+    // Guest state
+    const [isGuest, setIsGuest] = useState(false);
 
     // Audio refs
     const audioFlyRef = useRef<HTMLAudioElement | null>(null);
@@ -54,9 +61,34 @@ export default function Game() {
     const pillarImg = useRef<HTMLImageElement | null>(null);
     const coinImg = useRef<HTMLImageElement | null>(null);
 
+    // Dynamic canvas sizing
     useEffect(() => {
-        // Check for existing session
+        const container = containerRef.current;
+        if (!container) return;
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    setCanvasSize({ width: Math.round(width), height: Math.round(height) });
+                }
+            }
+        });
+        ro.observe(container);
+        return () => ro.disconnect();
+    }, []);
+
+    useEffect(() => {
+        // Check for existing session (or guest)
         const checkSession = async () => {
+            // Check guest first
+            const savedGuest = localStorage.getItem('modi_guest');
+            if (savedGuest === 'true') {
+                const guestName = localStorage.getItem('modi_name') || 'GUEST_' + Math.floor(1000 + Math.random() * 9000);
+                setPlayerName(guestName);
+                setIsGuest(true);
+                setGameState('start');
+                return;
+            }
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
                 const username = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'PLAYER';
@@ -270,8 +302,8 @@ export default function Game() {
         const currentBirdImg = birdImgRef.current[equippedSkin] || birdImgRef.current['modi'];
 
         const config: GameConfig = {
-            width: 400,
-            height: 600,
+            width: canvasSize.width,
+            height: canvasSize.height,
             birdSkinImg: currentBirdImg,
             pillarSkinImg: pillarImg.current!,
             bgImg: bgImgRef.current!,
@@ -288,9 +320,6 @@ export default function Game() {
                     audioFlyRef.current.pause();
                     audioFlyRef.current.currentTime = 0;
                 }
-                // Use functional state updater or soundEnabled closure check where possible, 
-                // but engine init is a callback, handleDead is safer to call or duplicate logic.
-                // It's already handled up in handleDead which we should map to instead of doing logic here.
                 handleDead(finalScore);
             }
         };
@@ -298,7 +327,7 @@ export default function Game() {
         engineRef.current = new GameEngine(canvasRef.current, config);
         engineRef.current.setInitialCoins(parseInt(localStorage.getItem('modi_coins') || '0', 10));
         engineRef.current.reset(); // Draw idle
-    }, [equippedSkin]); // Added equippedSkin to dependencies
+    }, [equippedSkin, canvasSize]); // Re-init when canvas size changes
 
     useEffect(() => {
         initEngine();
@@ -348,11 +377,11 @@ export default function Game() {
     };
 
     return (
-        <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden font-press-start p-0 sm:p-4">
+        <div className="relative w-full h-[100dvh] bg-black flex items-center justify-center overflow-hidden font-press-start">
             {/* Game Container */}
             <div
-                className="relative w-full max-w-[400px] h-full max-h-[100dvh] sm:max-h-[800px] aspect-[2/3] bg-sky-200 overflow-hidden cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                style={{ maxHeight: 'calc(100vw * 1.5)' }} // ensure it never breaks ratio if width is constrained
+                ref={containerRef}
+                className="relative w-full h-full max-w-[500px] bg-sky-200 overflow-hidden cursor-pointer"
                 onMouseDown={gameState === 'start' || gameState === 'playing' ? handleTap : undefined}
                 onTouchStart={gameState === 'start' || gameState === 'playing' ? handleTap : undefined}
             >
@@ -371,9 +400,9 @@ export default function Game() {
 
                 <canvas
                     ref={canvasRef}
-                    width={400}
-                    height={600}
-                    className="block w-full h-full object-cover pointer-events-none"
+                    width={canvasSize.width}
+                    height={canvasSize.height}
+                    className="block w-full h-full pointer-events-none"
                 />
 
                 {/* --- UI Overlays --- */}
@@ -486,6 +515,22 @@ export default function Game() {
                                 {authMode === 'login' ? 'NO ACCOUNT? SIGN UP' : 'HAVE ACCOUNT? LOGIN'}
                             </button>
 
+                            {/* Guest Sign-in */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    const guestName = 'GUEST_' + Math.floor(1000 + Math.random() * 9000);
+                                    setPlayerName(guestName);
+                                    setIsGuest(true);
+                                    localStorage.setItem('modi_name', guestName);
+                                    localStorage.setItem('modi_guest', 'true');
+                                    setGameState('start');
+                                }}
+                                className="w-[85%] max-w-[300px] bg-white/20 border-4 border-white/40 text-white font-press-start py-3 shadow-[4px_4px_0_0_rgba(0,0,0,0.3)] active:translate-y-1 active:shadow-none transition-all mb-6 text-[10px]"
+                            >
+                                ▶ PLAY AS GUEST
+                            </button>
+
                             {/* Admin Login */}
                             <button
                                 onClick={(e) => {
@@ -570,24 +615,33 @@ export default function Game() {
                             ) : (
                                 <span className="text-green-300 font-press-start text-[8px]">✅ ADMIN</span>
                             )}
+                            {isGuest && (
+                                <span className="text-yellow-300 font-press-start text-[8px] mb-1" style={{ textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
+                                    👤 {playerName}
+                                </span>
+                            )}
                             <button
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onTouchStart={(e) => e.stopPropagation()}
                                 onClick={async (e) => {
                                     e.stopPropagation();
-                                    await supabase.auth.signOut();
+                                    if (!isGuest) {
+                                        await supabase.auth.signOut();
+                                    }
                                     setPlayerName('');
                                     setIsAdmin(false);
+                                    setIsGuest(false);
                                     setAuthEmail('');
                                     setAuthPassword('');
                                     setAuthUsername('');
                                     setAuthError('');
                                     setAuthMode('login');
+                                    localStorage.removeItem('modi_guest');
                                     setGameState('login');
                                 }}
                                 className="text-red-300/50 font-press-start text-[8px] hover:text-red-300 transition-colors mt-1"
                             >
-                                LOGOUT
+                                {isGuest ? 'EXIT GUEST' : 'LOGOUT'}
                             </button>
                         </div>
                     </div>
