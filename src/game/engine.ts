@@ -1,16 +1,54 @@
-// Constants
-export const GRAVITY = 650; // px/s² (was 1200 – reduced for mobile)
-export const JUMP_VEL = -350; // px/s (was -480 – gentler jump)
-export const TERM_VEL = 500; // px/s (was 700 – slower fall cap)
-export const PIPE_SPEED = 200; // px/s (was 230 – slightly slower scroll)
-export const PIPE_GAP = 230; // px (was 210 – wider gap for touch)
-export const PIPE_SPACING = 310; // px
-export const FIRST_PIPE_X = 500; // px
+// ─── Progressive Difficulty System ───
+// All values lerp from START → END as score goes 0 → DIFFICULTY_SCORE_CAP
+
+// Gravity: how fast the bird falls
+const GRAVITY_START = 380;    // very floaty at first
+const GRAVITY_END = 950;      // challenging at high scores
+
+// Jump power: how high a tap sends you
+const JUMP_START = -300;      // gentle hop
+const JUMP_END = -420;        // stronger jump needed at higher gravity
+
+// Terminal velocity: max fall speed
+const TERM_VEL_START = 350;
+const TERM_VEL_END = 650;
+
+// Pipe speed: how fast obstacles scroll
+const SPEED_START = 140;      // leisurely scroll
+const SPEED_END = 280;        // fast
+
+// Pipe gap: space between top/bottom pillar
+const GAP_START = 280;        // very forgiving
+const GAP_END = 175;          // tight at high scores
+
+// Pipe spacing: horizontal distance between pillars
+const SPACING_START = 380;    // lots of breathing room
+const SPACING_END = 260;      // closer together
+
+// Score at which difficulty is maxed out
+const DIFFICULTY_SCORE_CAP = 30;
+
+// Fixed constants
+export const FIRST_PIPE_X = 600; // px – first pipe further away to let player settle
 export const BIRD_W = 72;
 export const BIRD_H = 52;
 export const PILLAR_W = 120;
 export const COIN_RADIUS = 24;
 export const HITBOX_SHRINK = 10;
+
+// Helper: lerp a value from start to end based on score (clamped 0..1)
+function diffLerp(start: number, end: number, score: number): number {
+    const t = Math.min(score / DIFFICULTY_SCORE_CAP, 1);
+    return start + (end - start) * t;
+}
+
+// Exported for UI display if needed
+export const PIPE_GAP = GAP_START; // default for type compat
+export const PIPE_SPEED = SPEED_START;
+export const GRAVITY = GRAVITY_START;
+export const JUMP_VEL = JUMP_START;
+export const TERM_VEL = TERM_VEL_START;
+export const PIPE_SPACING = SPACING_START;
 
 export interface GameConfig {
     width: number; // canvas.width
@@ -109,7 +147,7 @@ export class GameEngine {
 
     public jump() {
         if (this.isDead) return;
-        this.bird.vy = JUMP_VEL;
+        this.bird.vy = diffLerp(JUMP_START, JUMP_END, this.score);
     }
 
     public stop() {
@@ -134,15 +172,13 @@ export class GameEngine {
     }
 
     private spawnPillar(x: number) {
-        const minGapY = PIPE_GAP / 2 + 50;
-        const maxGapY = this.config.height - PIPE_GAP / 2 - 50;
+        const currentGap = diffLerp(GAP_START, GAP_END, this.score);
+        const minGapY = currentGap / 2 + 50;
+        const maxGapY = this.config.height - currentGap / 2 - 50;
         const gapY = minGapY + Math.random() * (maxGapY - minGapY);
 
         this.pillars.push({ x, gapY, scored: false });
 
-        // Exactly 1 coin per gap, perfectly centered.
-        // x is the left edge of the pillar, so x + PILLAR_W / 2 is the horizontal center.
-        // gapY is the exact vertical center of the gap.
         this.coins.push({
             x: x + PILLAR_W / 2,
             y: gapY,
@@ -167,8 +203,15 @@ export class GameEngine {
     };
 
     private update(dt: number) {
+        // Progressive difficulty values based on current score
+        const curSpeed = diffLerp(SPEED_START, SPEED_END, this.score);
+        const curGravity = diffLerp(GRAVITY_START, GRAVITY_END, this.score);
+        const curTermVel = diffLerp(TERM_VEL_START, TERM_VEL_END, this.score);
+        const curGap = diffLerp(GAP_START, GAP_END, this.score);
+        const curSpacing = diffLerp(SPACING_START, SPACING_END, this.score);
+
         // Background
-        this.bgOffset = (this.bgOffset + (PIPE_SPEED * dt) / 3) % this.config.width;
+        this.bgOffset = (this.bgOffset + (curSpeed * dt) / 3) % this.config.width;
 
         // Clouds
         for (const cloud of this.clouds) {
@@ -179,13 +222,13 @@ export class GameEngine {
             }
         }
 
-        // Bird Physics
-        this.bird.vy += GRAVITY * dt;
-        if (this.bird.vy > TERM_VEL) this.bird.vy = Math.min(this.bird.vy, TERM_VEL);
+        // Bird Physics (progressive)
+        this.bird.vy += curGravity * dt;
+        if (this.bird.vy > curTermVel) this.bird.vy = curTermVel;
         this.bird.y += this.bird.vy * dt;
 
         // Rotation lerp
-        const targetRotation = Math.max(-0.4, Math.min(0.5, this.bird.vy / 1200));
+        const targetRotation = Math.max(-0.4, Math.min(0.5, this.bird.vy / 800));
         this.bird.rotation += (targetRotation - this.bird.rotation) * 10 * dt;
 
         // Floor / Ceiling check
@@ -194,14 +237,13 @@ export class GameEngine {
             return;
         }
 
-        const birdX = this.config.width / 2 - BIRD_W / 2; // Bird is fixed horizontally relative to screen initially... actually wait, standard flappy bird keeps bird fixed at say 20% width. Let's fix bird X to 100px.
         const BIRD_FIXED_X = 100;
 
         // Pillars
         if (this.pillars.length > 0) {
             const rightmostPillar = this.pillars[this.pillars.length - 1];
             if (rightmostPillar.x < this.config.width) {
-                this.spawnPillar(rightmostPillar.x + PIPE_SPACING);
+                this.spawnPillar(rightmostPillar.x + curSpacing);
             }
         } else {
             this.spawnPillar(FIRST_PIPE_X);
@@ -209,7 +251,7 @@ export class GameEngine {
 
         for (let i = this.pillars.length - 1; i >= 0; i--) {
             const p = this.pillars[i];
-            p.x -= PIPE_SPEED * dt;
+            p.x -= curSpeed * dt;
 
             // Score
             if (!p.scored && p.x + PILLAR_W < BIRD_FIXED_X) {
@@ -226,8 +268,8 @@ export class GameEngine {
 
             const pLeft = p.x;
             const pRight = p.x + PILLAR_W;
-            const gapTop = p.gapY - PIPE_GAP / 2;
-            const gapBot = p.gapY + PIPE_GAP / 2;
+            const gapTop = p.gapY - curGap / 2;
+            const gapBot = p.gapY + curGap / 2;
 
             const xOverlap = bRight > pLeft && bLeft < pRight;
             if (xOverlap) {
@@ -249,7 +291,7 @@ export class GameEngine {
                 this.coins.splice(i, 1);
                 continue;
             }
-            c.x -= PIPE_SPEED * dt;
+            c.x -= curSpeed * dt;
 
             // Collect
             const dx = c.x - BIRD_FIXED_X;
@@ -301,9 +343,10 @@ export class GameEngine {
         const BIRD_FIXED_X = 100;
 
         // 4. Pillars
+        const drawGap = diffLerp(GAP_START, GAP_END, this.score);
         for (const p of this.pillars) {
-            const gapTop = p.gapY - PIPE_GAP / 2;
-            const gapBot = p.gapY + PIPE_GAP / 2;
+            const gapTop = p.gapY - drawGap / 2;
+            const gapBot = p.gapY + drawGap / 2;
 
             // Create cylindrical gradient
             const grad = ctx.createLinearGradient(p.x, 0, p.x + PILLAR_W, 0);
